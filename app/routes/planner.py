@@ -1,13 +1,22 @@
 import mimetypes
+from datetime import date
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.services.exporter import build_export_zip
 from app.services.generator import generate_recipes
 from app.services.matcher import rank_existing_recipes
-from app.services.mealie import fetch_all_recipes, fetch_recipe_detail
+from app.services.mealie import (
+    add_shopping_items,
+    add_to_mealplan,
+    create_recipe,
+    create_shopping_list,
+    fetch_all_recipes,
+    fetch_recipe_detail,
+    week_dates,
+)
+from app.services.staples import filter_ingredients
 from app.services.vision import extract_sale_items
 
 router = APIRouter()
@@ -27,10 +36,12 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {media_type}")
         image_data.append((await img.read(), media_type))
 
+    # 1. Extract sale items from ad photos
     sale_items = extract_sale_items(image_data)
     if not sale_items:
         raise HTTPException(status_code=422, detail="No sale items could be extracted from images.")
 
+    # 2. Fetch and score existing Mealie recipes
     mealie_summaries = fetch_all_recipes()
     detailed = []
     for summary in mealie_summaries:
@@ -39,20 +50,85 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
         except Exception:
             detailed.append(summary)
 
-    existing_week = settings.recipes_per_week
-    matched = rank_existing_recipes(detailed, sale_items, top_n=existing_week // 2 + 1)
+    target = settings.recipes_per_week
+    matched = rank_existing_recipes(detailed, sale_items, top_n=target // 2 + 1)
 
-    new_count = max(1, existing_week - len(matched))
+    # 3. Generate new recipes to fill remaining slots
+    new_count = max(1, target - len(matched))
     existing_names = [r.get("name", "") for r in matched]
     generated = generate_recipes(sale_items, existing_names, count=new_count)
 
-    zip_bytes = build_export_zip(generated, matched, sale_items)
+    # 4. Create new recipes in Mealie
+    created = []
+    for recipe in generated:
+        try:
+            slug, recipe_id = create_recipe(recipe)
+            created.append({"name": recipe["name"], "slug": slug, "id": recipe_id})
+        except Exception as e:
+            created.append({"name": recipe["name"], "slug": None, "id": None, "error": str(e)})
 
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=meal_plan.zip"},
+    # 5. Add all recipes to the meal plan across the week
+    dates = week_dates(start=date.today(), count=target)
+    plan_entries = []
+
+    all_recipes_for_plan = (
+        [{"name": r.get("name"), "id": r.get("id"), "source": "existing"} for r in matched]
+        + [{"name": c["name"], "id": c.get("id"), "source": "new"} for c in created]
     )
+
+    for i, entry in enumerate(all_recipes_for_plan[:target]):
+        if not entry["id"]:
+            continue
+        try:
+            add_to_mealplan(entry["id"], dates[i])
+            plan_entries.append({"date": dates[i], "recipe": entry["name"]})
+        except Exception:
+            pass
+
+    # 6. Build and push shopping list
+    all_ingredients = []
+    for recipe in matched:
+        all_ingredients.extend(filter_ingredients(recipe.get("recipeIngredient", [])))
+    for recipe in generated:
+        all_ingredients.extend(filter_ingredients(recipe.get("recipeIngredient", [])))
+
+    deduped = list(dict.fromkeys(all_ingredients))
+
+    list_name = f"Week of {date.today().strftime('%b %-d, %Y')}"
+    shopping_list_id = None
+    try:
+        shopping_list_id = create_shopping_list(list_name)
+        if deduped:
+            add_shopping_items(shopping_list_id, deduped)
+    except Exception:
+        pass
+
+    mealie_base = settings.mealie_url.rstrip("/")
+
+    return JSONResponse({
+        "sale_items_found": len(sale_items),
+        "meal_plan": plan_entries,
+        "new_recipes": [
+            {
+                "name": c["name"],
+                "url": f"{mealie_base}/recipe/{c['slug']}" if c.get("slug") else None,
+            }
+            for c in created
+        ],
+        "existing_recipes_matched": [
+            {
+                "name": r.get("name"),
+                "matched_sales": r.get("_matched_sales", []),
+                "url": f"{mealie_base}/recipe/{r.get('slug')}",
+            }
+            for r in matched
+        ],
+        "shopping_list": {
+            "name": list_name,
+            "items": len(deduped),
+            "url": f"{mealie_base}/shopping-lists/{shopping_list_id}" if shopping_list_id else None,
+        },
+    })
 
 
 @router.get("/api/health")
