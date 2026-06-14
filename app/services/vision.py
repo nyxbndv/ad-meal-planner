@@ -1,6 +1,6 @@
 import base64
 import json
-from pathlib import Path
+import re
 
 import anthropic
 
@@ -45,7 +45,7 @@ def extract_sale_items(images: list[tuple[bytes, str]]) -> list[dict]:
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         messages=[{"role": "user", "content": content}],
     )
 
@@ -54,4 +54,19 @@ def extract_sale_items(images: list[tuple[bytes, str]]) -> list[dict]:
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+    raw = raw.strip()
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Salvage complete objects from a truncated array
+        objects = re.findall(r'\{[^{}]+\}', raw)
+        items = []
+        for obj in objects:
+            try:
+                items.append(json.loads(obj))
+            except json.JSONDecodeError:
+                continue
+        if items:
+            return items
+        raise
