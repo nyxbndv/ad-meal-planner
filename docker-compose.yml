@@ -1,0 +1,9 @@
+services:
+  ad-meal-planner:
+    build: .
+    container_name: ad-meal-planner
+    restart: unless-stopped
+    ports:
+      - "8765:8000"
+    env_file:
+      - .env

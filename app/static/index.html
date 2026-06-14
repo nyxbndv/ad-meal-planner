@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ad Meal Planner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 580px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+      color: #f1f5f9;
+    }
+
+    .subtitle {
+      font-size: 0.875rem;
+      color: #64748b;
+      margin-bottom: 1.75rem;
+    }
+
+    .drop-zone {
+      border: 2px dashed #2d3148;
+      border-radius: 8px;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #6366f1;
+      background: rgba(99, 102, 241, 0.05);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .drop-zone p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+
+    .drop-zone span {
+      color: #818cf8;
+      font-weight: 500;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+
+    .preview-grid img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: 6px;
+      border: 1px solid #2d3148;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      margin-top: 1.25rem;
+      padding: 0.75rem;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover:not(:disabled) { background: #4f46e5; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      text-align: center;
+      min-height: 1.25rem;
+      color: #94a3b8;
+    }
+
+    .status.error { color: #f87171; }
+    .status.success { color: #4ade80; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #6366f1;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .steps {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: #475569;
+      list-style: none;
+    }
+    .steps li { padding: 0.15rem 0; }
+    .steps li.active { color: #a5b4fc; }
+    .steps li.done { color: #4ade80; }
+    .steps li.done::before { content: "✓ "; }
+    .steps li.active::before { content: "→ "; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Ad Meal Planner</h1>
+    <p class="subtitle">Upload photos of your weekly grocery circular to get a meal plan.</p>
+
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*" multiple />
+      <div class="drop-icon">📷</div>
+      <p><span>Click to upload</span> or drag and drop</p>
+      <p>JPG, PNG, WEBP — multiple pages OK</p>
+    </div>
+
+    <div class="preview-grid" id="previewGrid"></div>
+
+    <button class="btn" id="submitBtn" disabled>Generate Meal Plan</button>
+
+    <div class="status" id="status"></div>
+
+    <ul class="steps" id="steps" style="display:none">
+      <li id="step1">Extracting sale items from images</li>
+      <li id="step2">Fetching your Mealie recipes</li>
+      <li id="step3">Matching &amp; generating recipes</li>
+      <li id="step4">Building export ZIP</li>
+    </ul>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const previewGrid = document.getElementById('previewGrid');
+    const submitBtn = document.getElementById('submitBtn');
+    const status = document.getElementById('status');
+    const steps = document.getElementById('steps');
+    let selectedFiles = [];
+
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      handleFiles([...e.dataTransfer.files]);
+    });
+    fileInput.addEventListener('change', () => handleFiles([...fileInput.files]));
+
+    function handleFiles(files) {
+      selectedFiles = files.filter(f => f.type.startsWith('image/'));
+      previewGrid.innerHTML = '';
+      selectedFiles.forEach(f => {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(f);
+        previewGrid.appendChild(img);
+      });
+      submitBtn.disabled = selectedFiles.length === 0;
+    }
+
+    function setStep(n) {
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById(`step${i}`);
+        el.className = i < n ? 'done' : i === n ? 'active' : '';
+      }
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFiles.length) return;
+
+      submitBtn.disabled = true;
+      status.className = 'status';
+      status.innerHTML = '<span class="spinner"></span> Processing — this takes 30–60 seconds…';
+      steps.style.display = 'block';
+      setStep(1);
+
+      const form = new FormData();
+      selectedFiles.forEach(f => form.append('images', f));
+
+      // Fake step progression while waiting (server does all steps in one request)
+      const delays = [4000, 8000, 14000];
+      delays.forEach((ms, i) => setTimeout(() => setStep(i + 2), ms));
+
+      try {
+        const res = await fetch('/api/plan', { method: 'POST', body: form });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: res.statusText }));
+          throw new Error(err.detail || 'Unknown error');
+        }
+
+        setStep(4);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'meal_plan.zip';
+        a.click();
+        URL.revokeObjectURL(url);
+
+        status.className = 'status success';
+        status.textContent = 'Done! meal_plan.zip downloaded.';
+      } catch (err) {
+        status.className = 'status error';
+        status.textContent = `Error: ${err.message}`;
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
