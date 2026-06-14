@@ -1,6 +1,6 @@
 services:
   ad-meal-planner:
-    build: .
+    image: nyxbndv/ad-meal-planner:latest
     container_name: ad-meal-planner
     restart: unless-stopped
     ports:
