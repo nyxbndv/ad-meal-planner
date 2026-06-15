@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 
 import httpx
@@ -6,6 +7,11 @@ from app.config import settings
 
 BASE = settings.mealie_url.rstrip("/")
 HEADERS = {"Authorization": f"Bearer {settings.mealie_api_key}"}
+
+
+def _tag(name: str) -> dict:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return {"name": name, "slug": slug}
 
 
 def _get(path: str, params: dict = None) -> dict:
@@ -78,7 +84,7 @@ def _format_recipe(recipe: dict) -> dict:
         "recipeInstructions": instructions,
         "notes": recipe.get("notes", []),
         "orgURL": recipe.get("orgURL") or None,
-        "tags": [{"name": t} for t in recipe.get("tags", [])],
+        "tags": [_tag(t) if isinstance(t, str) else t for t in recipe.get("tags", [])],
     }
 
 
@@ -87,7 +93,7 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     existing = [t["name"] for t in detail.get("tags", [])]
     merged = list(dict.fromkeys(existing + tags))
     body = _format_recipe(detail)
-    body["tags"] = [{"name": t} for t in merged]
+    body["tags"] = [_tag(t) for t in merged]
     _put(f"/api/recipes/{slug}", body)
 
 
@@ -126,5 +132,10 @@ def create_shopping_list(name: str) -> str:
 
 
 def add_shopping_items(list_id: str, items: list[str]) -> None:
-    payload = [{"note": item, "quantity": 0, "isFood": False, "shoppingListId": list_id} for item in items]
-    _post("/api/households/shopping/items", payload)
+    for item in items:
+        try:
+            _post("/api/households/shopping/items", {
+                "note": item, "quantity": 0, "isFood": False, "shoppingListId": list_id
+            })
+        except Exception as e:
+            print(f"Shopping item error ({item!r}): {e}")
