@@ -14,10 +14,10 @@ def _get(path: str, params: dict = None) -> dict:
     return r.json()
 
 
-def _post(path: str, body: dict) -> dict:
+def _post(path: str, body) -> dict:
     r = httpx.post(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
     r.raise_for_status()
-    return r.json()
+    return r.json() if r.content else {}
 
 
 def _put(path: str, body: dict) -> dict:

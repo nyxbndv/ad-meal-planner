@@ -82,8 +82,8 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
         try:
             add_to_mealplan(entry["id"], dates[i])
             plan_entries.append({"date": dates[i], "recipe": entry["name"]})
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Meal plan error for {entry['name']}: {e}")
 
     # 6. Build and push shopping list
     all_ingredients = []
@@ -100,8 +100,10 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
         shopping_list_id = create_shopping_list(list_name)
         if deduped:
             add_shopping_items(shopping_list_id, deduped)
-    except Exception:
-        pass
+        else:
+            print("Shopping list: no ingredients after filtering staples")
+    except Exception as e:
+        print(f"Shopping list error: {e}")
 
     mealie_base = settings.mealie_url.rstrip("/")
 
