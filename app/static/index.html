@@ -268,8 +268,12 @@
 
       try {
         const res = await fetch('/api/plan', { method: 'POST', body: form });
+        if (!res.ok) {
+          let msg = `Server error (${res.status})`;
+          try { const err = await res.json(); msg = err.detail || msg; } catch {}
+          throw new Error(msg);
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || res.statusText);
         status.textContent = '';
         showResults(data);
       } catch (err) {
