@@ -34,6 +34,14 @@ def _put(path: str, body: dict) -> dict:
     return r.json() if r.content else {}
 
 
+def _patch(path: str, body: dict) -> dict:
+    r = httpx.patch(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
+    if not r.is_success:
+        print(f"PATCH {path} {r.status_code}: {r.text[:500]}")
+    r.raise_for_status()
+    return r.json() if r.content else {}
+
+
 # ── existing recipes ──────────────────────────────────────────────────────────
 
 def fetch_all_recipes() -> list[dict]:
@@ -94,14 +102,14 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     merged = list(dict.fromkeys(existing + tags))
     body = _format_recipe(detail)
     body["tags"] = [_tag(t) for t in merged]
-    _put(f"/api/recipes/{slug}", body)
+    _patch(f"/api/recipes/{slug}", body)
 
 
 def create_recipe(recipe: dict) -> tuple[str, str]:
     """Create a recipe in Mealie. Returns (slug, id)."""
     result = _post("/api/recipes", {"name": recipe["name"]})
     slug = result if isinstance(result, str) else result.get("slug", recipe["name"])
-    _put(f"/api/recipes/{slug}", _format_recipe(recipe))
+    _patch(f"/api/recipes/{slug}", _format_recipe(recipe))
     detail = _get(f"/api/recipes/{slug}")
     return slug, detail["id"]
 
