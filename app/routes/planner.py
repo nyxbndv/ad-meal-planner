@@ -38,12 +38,15 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {media_type}")
         image_data.append((await img.read(), media_type))
 
-    # 1. Extract sale items from ad photos
+    # 1. Clean up any duplicate recipe shells from previous failed runs
+    delete_duplicate_recipes()
+
+    # 2. Extract sale items from ad photos
     sale_items = extract_sale_items(image_data)
     if not sale_items:
         raise HTTPException(status_code=422, detail="No sale items could be extracted from images.")
 
-    # 2. Fetch and score existing Mealie recipes
+    # 3. Fetch and score existing Mealie recipes
     mealie_summaries = fetch_all_recipes()
     detailed = []
     for summary in mealie_summaries:
