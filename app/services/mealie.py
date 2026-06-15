@@ -106,13 +106,24 @@ def _format_recipe(recipe: dict) -> dict:
     }
 
 
-def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
+def add_tags_to_recipe(slug: str, tags: list[str]) -> tuple[str, str]:
+    """Add tags to a recipe. Returns (new_slug, new_id) — IDs change due to DELETE+POST."""
     detail = _get(f"/api/recipes/{slug}")
     existing_tags = [t["name"] for t in detail.get("tags", [])]
     merged = list(dict.fromkeys(existing_tags + tags))
-    body = {**detail}
+
+    # DELETE → POST → PUT because this Mealie version rejects PUT on existing names
+    httpx.delete(f"{BASE}/api/recipes/{slug}", headers=HEADERS, timeout=15).raise_for_status()
+    result = _post("/api/recipes", {"name": detail["name"]})
+    new_slug = result if isinstance(result, str) else result.get("slug", slug)
+    shell = _get(f"/api/recipes/{new_slug}")
+    body = {**detail, **shell}
+    body["id"] = shell["id"]
+    body["slug"] = shell["slug"]
+    body["name"] = shell["name"]
     body["tags"] = [_tag(t) for t in merged]
-    _put(f"/api/recipes/{slug}", body)
+    _put(f"/api/recipes/{new_slug}", body)
+    return new_slug, shell["id"]
 
 
 def _name_to_slug(name: str) -> str:
@@ -120,30 +131,21 @@ def _name_to_slug(name: str) -> str:
 
 
 def create_recipe(recipe: dict) -> tuple[str, str]:
-    """Create or update a recipe in Mealie (upsert by slug). Returns (slug, id)."""
-    expected_slug = _name_to_slug(recipe["name"])
+    """Create recipe in Mealie. Deletes any existing recipe with this name first,
+    because this Mealie version returns 400 on PUT if the name already exists."""
+    name_lower = recipe["name"].lower().strip()
+    for r in fetch_all_recipes():
+        if r.get("name", "").lower().strip() == name_lower:
+            try:
+                httpx.delete(f"{BASE}/api/recipes/{r['slug']}", headers=HEADERS, timeout=15).raise_for_status()
+            except Exception as e:
+                print(f"Failed to delete existing recipe {r['slug']}: {e}")
 
-    existing = None
-    try:
-        existing = _get(f"/api/recipes/{expected_slug}")
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code != 404:
-            raise
-
-    if existing:
-        slug = existing["slug"]
-        stored_name = existing["name"]
-    else:
-        result = _post("/api/recipes", {"name": recipe["name"]})
-        slug = result if isinstance(result, str) else result.get("slug", expected_slug)
-        existing = _get(f"/api/recipes/{slug}")
-        stored_name = existing["name"]
-
-    # Merge generated content into the full Mealie object so all required
-    # fields (id, slug, settings, nutrition, etc.) are preserved on PUT
-    body = {**existing, **_format_recipe(recipe)}
-    body["name"] = stored_name  # never let a name change trigger a slug conflict
-
+    result = _post("/api/recipes", {"name": recipe["name"]})
+    slug = result if isinstance(result, str) else result.get("slug", _name_to_slug(recipe["name"]))
+    shell = _get(f"/api/recipes/{slug}")
+    body = {**shell, **_format_recipe(recipe)}
+    body["name"] = shell["name"]
     _put(f"/api/recipes/{slug}", body)
     detail = _get(f"/api/recipes/{slug}")
     return slug, detail["id"]

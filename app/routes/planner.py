@@ -76,18 +76,21 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         except Exception as e:
             created.append({"name": recipe["name"], "slug": None, "id": None, "error": str(e)})
 
+    matched_for_plan = []
     for recipe in matched:
         try:
-            add_tags_to_recipe(recipe["slug"], matched_tag)
+            new_slug, new_id = add_tags_to_recipe(recipe["slug"], matched_tag)
+            matched_for_plan.append({"name": recipe.get("name"), "id": new_id})
         except Exception as e:
             print(f"Tag error for {recipe.get('name')}: {e}")
+            matched_for_plan.append({"name": recipe.get("name"), "id": recipe.get("id")})
 
     # 5. Add all recipes to the meal plan across the week
     dates = week_dates(start=date.today(), count=target)
     plan_entries = []
 
     all_recipes_for_plan = (
-        [{"name": r.get("name"), "id": r.get("id"), "source": "existing"} for r in matched]
+        matched_for_plan
         + [{"name": c["name"], "id": c.get("id"), "source": "new"} for c in created]
     )
 
