@@ -39,7 +39,13 @@ def _put(path: str, body: dict) -> dict:
 
 def fetch_all_recipes() -> list[dict]:
     data = _get("/api/recipes", params={"page": 1, "perPage": -1})
-    return data.get("data", [])
+    # Handle both Mealie API shapes: newer uses "data", older uses "items"
+    return data.get("data") or data.get("items") or []
+
+
+def debug_mealie() -> dict:
+    raw = _get("/api/recipes", params={"page": 1, "perPage": 5})
+    return {"top_level_keys": list(raw.keys()), "sample": raw}
 
 
 def fetch_recipe_detail(slug: str) -> dict:

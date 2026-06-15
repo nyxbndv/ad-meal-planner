@@ -13,6 +13,7 @@ from app.services.mealie import (
     add_tags_to_recipe,
     create_recipe,
     create_shopping_list,
+    debug_mealie,
     delete_duplicate_recipes,
     fetch_all_recipes,
     fetch_recipe_detail,
@@ -149,6 +150,12 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
             "url": f"{mealie_base}/shopping-lists/{shopping_list_id}" if shopping_list_id else None,
         },
     })
+
+
+@router.get("/api/debug")
+def debug():
+    """Returns raw Mealie /api/recipes response to verify pagination key and auth."""
+    return debug_mealie()
 
 
 @router.post("/api/cleanup")
