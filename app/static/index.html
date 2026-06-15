@@ -138,6 +138,11 @@
     </div>
 
     <div class="preview-grid" id="previewGrid"></div>
+
+    <input type="text" id="storeInput" placeholder="Store name (optional, e.g. Stop &amp; Shop)"
+      style="width:100%;margin-top:1rem;padding:0.6rem 0.75rem;background:#12141e;border:1px solid #2d3148;
+             border-radius:8px;color:#e2e8f0;font-size:0.9rem;outline:none;" />
+
     <button class="btn" id="submitBtn" disabled>Generate Meal Plan</button>
     <div class="status" id="status"></div>
 
@@ -265,6 +270,8 @@
 
       const form = new FormData();
       selectedFiles.forEach(f => form.append('images', f));
+      const store = document.getElementById('storeInput').value.trim();
+      if (store) form.append('store', store);
 
       try {
         const res = await fetch('/api/plan', { method: 'POST', body: form });

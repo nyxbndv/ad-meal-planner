@@ -1,7 +1,7 @@
 import mimetypes
 from datetime import date
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.config import settings
@@ -10,6 +10,7 @@ from app.services.matcher import rank_existing_recipes
 from app.services.mealie import (
     add_shopping_items,
     add_to_mealplan,
+    add_tags_to_recipe,
     create_recipe,
     create_shopping_list,
     fetch_all_recipes,
@@ -25,7 +26,7 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 @router.post("/api/plan")
-async def create_meal_plan(images: list[UploadFile] = File(...)):
+async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Form("")):
     if not images:
         raise HTTPException(status_code=400, detail="At least one image is required.")
 
@@ -56,9 +57,13 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
     # 3. Generate new recipes to fill remaining slots
     new_count = max(1, target - len(matched))
     existing_names = [r.get("name", "") for r in matched]
-    generated = generate_recipes(sale_items, existing_names, count=new_count)
+    tags = ["claude-generated", "meal-planner"]
+    if store:
+        tags.append(store.lower().replace(" ", "-"))
+    generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags)
 
     # 4. Create new recipes in Mealie
+    matched_tag = ["meal-planner"] + ([store.lower().replace(" ", "-")] if store else [])
     created = []
     for recipe in generated:
         try:
@@ -66,6 +71,12 @@ async def create_meal_plan(images: list[UploadFile] = File(...)):
             created.append({"name": recipe["name"], "slug": slug, "id": recipe_id})
         except Exception as e:
             created.append({"name": recipe["name"], "slug": None, "id": None, "error": str(e)})
+
+    for recipe in matched:
+        try:
+            add_tags_to_recipe(recipe["slug"], matched_tag)
+        except Exception as e:
+            print(f"Tag error for {recipe.get('name')}: {e}")
 
     # 5. Add all recipes to the meal plan across the week
     dates = week_dates(start=date.today(), count=target)

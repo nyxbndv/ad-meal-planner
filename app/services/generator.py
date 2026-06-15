@@ -11,6 +11,7 @@ def generate_recipes(
     sale_items: list[dict],
     existing_recipe_names: list[str],
     count: int = 3,
+    tags: list[str] = None,
 ) -> list[dict]:
     """
     Generate new recipes using sale items, avoiding duplicates with existing recipes.
@@ -55,4 +56,11 @@ Return ONLY the JSON array, no other text."""
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-    return json.loads(raw.strip())
+    recipes = json.loads(raw.strip())
+
+    if tags:
+        for recipe in recipes:
+            existing_tags = recipe.get("tags", [])
+            recipe["tags"] = list(dict.fromkeys(existing_tags + tags))
+
+    return recipes

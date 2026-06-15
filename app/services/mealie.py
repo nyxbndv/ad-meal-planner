@@ -76,7 +76,15 @@ def _format_recipe(recipe: dict) -> dict:
         "recipeInstructions": instructions,
         "notes": recipe.get("notes", []),
         "orgURL": recipe.get("orgURL") or None,
+        "tags": [{"name": t} for t in recipe.get("tags", [])],
     }
+
+
+def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
+    detail = _get(f"/api/recipes/{slug}")
+    existing = [t["name"] for t in detail.get("tags", [])]
+    merged = list(dict.fromkeys(existing + tags))
+    _put(f"/api/recipes/{slug}", {**detail, "tags": [{"name": t} for t in merged]})
 
 
 def create_recipe(recipe: dict) -> tuple[str, str]:
