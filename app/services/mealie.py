@@ -108,12 +108,10 @@ def _format_recipe(recipe: dict) -> dict:
 
 def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     detail = _get(f"/api/recipes/{slug}")
-    existing = [t["name"] for t in detail.get("tags", [])]
-    merged = list(dict.fromkeys(existing + tags))
-    body = _format_recipe(detail)
+    existing_tags = [t["name"] for t in detail.get("tags", [])]
+    merged = list(dict.fromkeys(existing_tags + tags))
+    body = {**detail}
     body["tags"] = [_tag(t) for t in merged]
-    body["id"] = detail["id"]
-    body["slug"] = detail["slug"]
     _put(f"/api/recipes/{slug}", body)
 
 
@@ -134,14 +132,17 @@ def create_recipe(recipe: dict) -> tuple[str, str]:
 
     if existing:
         slug = existing["slug"]
-        body = _format_recipe(recipe)
-        body["name"] = existing["name"]  # preserve stored name to avoid conflict on PUT
-        body["id"] = existing["id"]
-        body["slug"] = existing["slug"]
+        stored_name = existing["name"]
     else:
         result = _post("/api/recipes", {"name": recipe["name"]})
         slug = result if isinstance(result, str) else result.get("slug", expected_slug)
-        body = _format_recipe(recipe)
+        existing = _get(f"/api/recipes/{slug}")
+        stored_name = existing["name"]
+
+    # Merge generated content into the full Mealie object so all required
+    # fields (id, slug, settings, nutrition, etc.) are preserved on PUT
+    body = {**existing, **_format_recipe(recipe)}
+    body["name"] = stored_name  # never let a name change trigger a slug conflict
 
     _put(f"/api/recipes/{slug}", body)
     detail = _get(f"/api/recipes/{slug}")
