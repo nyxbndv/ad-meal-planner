@@ -22,8 +22,10 @@ def _post(path: str, body) -> dict:
 
 def _put(path: str, body: dict) -> dict:
     r = httpx.put(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
+    if not r.is_success:
+        print(f"PUT {path} {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
-    return r.json()
+    return r.json() if r.content else {}
 
 
 # ── existing recipes ──────────────────────────────────────────────────────────
@@ -124,5 +126,5 @@ def create_shopping_list(name: str) -> str:
 
 
 def add_shopping_items(list_id: str, items: list[str]) -> None:
-    payload = [{"note": item, "quantity": 0, "isFood": False} for item in items]
-    _post(f"/api/households/shopping/lists/{list_id}/items", payload)
+    payload = [{"note": item, "quantity": 0, "isFood": False, "shoppingListId": list_id} for item in items]
+    _post("/api/households/shopping/items", payload)
