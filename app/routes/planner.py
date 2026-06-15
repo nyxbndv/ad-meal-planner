@@ -43,9 +43,11 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
     sale_items = extract_sale_items(image_data)
     if not sale_items:
         raise HTTPException(status_code=422, detail="No sale items could be extracted from images.")
+    print(f"[1/6] Found {len(sale_items)} sale items: {[i['name'] for i in sale_items]}")
 
     # 2. Fetch and score existing Tandoor recipes
     summaries = fetch_all_recipes()
+    print(f"[2/6] Fetched {len(summaries)} recipes from Tandoor")
     detailed = []
     for summary in summaries:
         try:
@@ -55,6 +57,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
 
     target = settings.recipes_per_week
     matched = rank_existing_recipes(detailed, sale_items, top_n=target // 2 + 1)
+    print(f"[2/6] Matched {len(matched)} existing recipes: {[r.get('name') for r in matched]}")
 
     # 3. Generate new recipes to fill remaining slots
     new_count = max(1, target - len(matched))
@@ -62,7 +65,9 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
     tags = ["claude-generated", "meal-planner"]
     if store:
         tags.append(store.lower().replace(" ", "-"))
+    print(f"[3/6] Generating {new_count} new recipes...")
     generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags)
+    print(f"[3/6] Generated: {[r.get('name') for r in generated]}")
 
     # 4. Create new recipes in Tandoor
     matched_tag = ["meal-planner"] + ([store.lower().replace(" ", "-")] if store else [])
@@ -71,16 +76,19 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         try:
             recipe_id, _ = create_recipe(recipe)
             created.append({"name": recipe["name"], "id": recipe_id})
+            print(f"[4/6] Created recipe: {recipe['name']} (id={recipe_id})")
         except Exception as e:
             created.append({"name": recipe["name"], "id": None, "error": str(e)})
+            print(f"[4/6] Failed to create recipe {recipe['name']}: {e}")
 
     matched_for_plan = []
     for recipe in matched:
         try:
             new_id, _ = add_tags_to_recipe(str(recipe["id"]), matched_tag)
             matched_for_plan.append({"name": recipe.get("name"), "id": new_id})
+            print(f"[4/6] Tagged existing recipe: {recipe.get('name')}")
         except Exception as e:
-            print(f"Tag error for {recipe.get('name')}: {e}")
+            print(f"[4/6] Tag error for {recipe.get('name')}: {e}")
             matched_for_plan.append({"name": recipe.get("name"), "id": str(recipe.get("id"))})
 
     # 5. Add all recipes to the meal plan across the week
@@ -92,14 +100,17 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         + [{"name": c["name"], "id": c.get("id")} for c in created]
     )
 
+    print(f"[5/6] Adding {len(all_recipes_for_plan)} recipes to meal plan...")
     for i, entry in enumerate(all_recipes_for_plan[:target]):
         if not entry["id"]:
+            print(f"[5/6] Skipping {entry['name']} — no id")
             continue
         try:
-            add_to_mealplan(entry["id"], dates[i])
+            add_to_mealplan(entry["id"], dates[i], recipe_name=entry["name"])
             plan_entries.append({"date": dates[i], "recipe": entry["name"]})
+            print(f"[5/6] Meal plan: {dates[i]} → {entry['name']}")
         except Exception as e:
-            print(f"Meal plan error for {entry['name']}: {e}")
+            print(f"[5/6] Meal plan error for {entry['name']}: {e}")
 
     # 6. Build and push shopping list
     all_ingredients = []
@@ -109,6 +120,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         all_ingredients.extend(filter_ingredients(recipe.get("recipeIngredient", [])))
 
     deduped = list(dict.fromkeys(all_ingredients))
+    print(f"[6/6] Shopping list: {len(deduped)} items")
 
     list_name = f"Week of {date.today().strftime('%b %-d, %Y')}"
     shopping_list_id = None
@@ -117,9 +129,9 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         if deduped:
             add_shopping_items(shopping_list_id, deduped)
         else:
-            print("Shopping list: no ingredients after filtering staples")
+            print("[6/6] No ingredients after filtering staples")
     except Exception as e:
-        print(f"Shopping list error: {e}")
+        print(f"[6/6] Shopping list error: {e}")
 
     tandoor_base = settings.tandoor_url.rstrip("/")
 

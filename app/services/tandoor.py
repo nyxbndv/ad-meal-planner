@@ -182,13 +182,13 @@ def _get_or_create_meal_type(name: str) -> dict:
     return _post("/api/meal-type/", {"name": name, "order": 0})
 
 
-def add_to_mealplan(recipe_id: str, plan_date: str, entry_type: str = "dinner") -> dict:
+def add_to_mealplan(recipe_id: str, plan_date: str, entry_type: str = "dinner", recipe_name: str = "") -> dict:
     meal_type = _get_or_create_meal_type(entry_type.capitalize())
     return _post("/api/meal-plan/", {
-        "recipe": {"id": int(recipe_id)},
+        "recipe": {"id": int(recipe_id), "name": recipe_name},
         "from_date": plan_date,
         "to_date": plan_date,
-        "meal_type": {"id": meal_type["id"]},
+        "meal_type": {"id": meal_type["id"], "name": meal_type["name"]},
         "title": "",
         "note": "",
         "servings": 4,
