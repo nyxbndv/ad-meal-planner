@@ -84,7 +84,9 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     detail = _get(f"/api/recipes/{slug}")
     existing = [t["name"] for t in detail.get("tags", [])]
     merged = list(dict.fromkeys(existing + tags))
-    _put(f"/api/recipes/{slug}", {**detail, "tags": [{"name": t} for t in merged]})
+    body = _format_recipe(detail)
+    body["tags"] = [{"name": t} for t in merged]
+    _put(f"/api/recipes/{slug}", body)
 
 
 def create_recipe(recipe: dict) -> tuple[str, str]:
@@ -99,7 +101,7 @@ def create_recipe(recipe: dict) -> tuple[str, str]:
 # ── meal plan ─────────────────────────────────────────────────────────────────
 
 def add_to_mealplan(recipe_id: str, plan_date: str, entry_type: str = "dinner") -> dict:
-    return _post("/api/groups/mealplans", {
+    return _post("/api/households/mealplans", {
         "date": plan_date,
         "entryType": entry_type,
         "recipeId": recipe_id,
@@ -117,10 +119,10 @@ def week_dates(start: date = None, count: int = 7) -> list[str]:
 
 def create_shopping_list(name: str) -> str:
     """Create a shopping list and return its id."""
-    result = _post("/api/groups/shopping/lists", {"name": name})
+    result = _post("/api/households/shopping/lists", {"name": name})
     return result["id"]
 
 
 def add_shopping_items(list_id: str, items: list[str]) -> None:
     payload = [{"note": item, "quantity": 0, "isFood": False} for item in items]
-    _post(f"/api/groups/shopping/lists/{list_id}/items", payload)
+    _post(f"/api/households/shopping/lists/{list_id}/items", payload)
