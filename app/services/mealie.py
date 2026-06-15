@@ -38,20 +38,37 @@ def _put(path: str, body: dict) -> dict:
 # ── existing recipes ──────────────────────────────────────────────────────────
 
 def fetch_all_recipes() -> list[dict]:
-    page, per_page = 1, 50
-    results = []
-    while True:
-        data = _get("/api/recipes", params={"page": page, "perPage": per_page})
-        items = data.get("items", [])
-        results.extend(items)
-        if len(items) < per_page:
-            break
-        page += 1
-    return results
+    data = _get("/api/recipes", params={"page": 1, "perPage": -1})
+    return data.get("data", [])
 
 
 def fetch_recipe_detail(slug: str) -> dict:
     return _get(f"/api/recipes/{slug}")
+
+
+def delete_duplicate_recipes() -> list[str]:
+    """Delete duplicate recipes (same name, different slug). Returns list of deleted slugs."""
+    all_recipes = fetch_all_recipes()
+    by_name: dict[str, list[dict]] = {}
+    for r in all_recipes:
+        name = r.get("name", "").lower().strip()
+        by_name.setdefault(name, []).append(r)
+
+    deleted = []
+    for name, dupes in by_name.items():
+        if len(dupes) <= 1:
+            continue
+        # Keep the one whose slug best matches the canonical slug (no numeric suffix)
+        canonical = _name_to_slug(dupes[0]["name"])
+        dupes.sort(key=lambda r: (r["slug"] != canonical, r["slug"]))
+        for r in dupes[1:]:
+            try:
+                httpx.delete(f"{BASE}/api/recipes/{r['slug']}", headers=HEADERS, timeout=15).raise_for_status()
+                deleted.append(r["slug"])
+                print(f"Deleted duplicate: {r['slug']} ({r.get('name')})")
+            except Exception as e:
+                print(f"Failed to delete {r['slug']}: {e}")
+    return deleted
 
 
 # ── create recipes ────────────────────────────────────────────────────────────
