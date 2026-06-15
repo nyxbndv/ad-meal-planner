@@ -26,9 +26,15 @@ def filter_ingredients(ingredients: list) -> list[str]:
     result = []
     for ing in ingredients:
         if isinstance(ing, dict):
-            text = ing.get("display") or ing.get("note") or ing.get("food") or ""
-            if ing.get("quantity") and ing.get("unit"):
-                text = f"{ing['quantity']} {ing['unit']} {text}".strip()
+            food_field = ing.get("food")
+            if isinstance(food_field, dict):
+                food_field = food_field.get("name", "")
+            unit_field = ing.get("unit")
+            if isinstance(unit_field, dict):
+                unit_field = unit_field.get("name", "")
+            text = ing.get("display") or ing.get("note") or food_field or ""
+            if ing.get("quantity") and unit_field:
+                text = f"{ing['quantity']} {unit_field} {text}".strip()
         else:
             text = str(ing)
 

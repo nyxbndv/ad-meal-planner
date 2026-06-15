@@ -10,7 +10,10 @@ def score_recipe(recipe: dict, sale_items: list[dict]) -> tuple[int, list[str]]:
     for ing in ingredients:
         food = ""
         if isinstance(ing, dict):
-            food = (ing.get("food") or ing.get("note") or ing.get("display") or "").lower()
+            food_field = ing.get("food")
+            if isinstance(food_field, dict):
+                food_field = food_field.get("name", "")
+            food = (food_field or ing.get("note") or ing.get("display") or "").lower()
         elif isinstance(ing, str):
             food = ing.lower()
 
