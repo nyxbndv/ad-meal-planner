@@ -47,11 +47,43 @@ def fetch_recipe_detail(slug: str) -> dict:
 
 # ── create recipes ────────────────────────────────────────────────────────────
 
+def _format_recipe(recipe: dict) -> dict:
+    """Convert generated recipe dict to Mealie's PUT schema."""
+    ingredients = []
+    for ing in recipe.get("recipeIngredient", []):
+        if isinstance(ing, str):
+            ingredients.append({"note": ing, "display": ing, "quantity": 0,
+                                 "unit": None, "food": None, "title": None, "originalText": ing})
+        elif isinstance(ing, dict):
+            ingredients.append(ing)
+
+    instructions = []
+    for step in recipe.get("recipeInstructions", []):
+        if isinstance(step, str):
+            instructions.append({"text": step, "title": "", "summary": "", "ingredientReferences": []})
+        elif isinstance(step, dict):
+            instructions.append({"text": step.get("text", ""), "title": step.get("title", ""),
+                                  "summary": step.get("summary", ""), "ingredientReferences": []})
+
+    return {
+        "name": recipe.get("name", ""),
+        "description": recipe.get("description", ""),
+        "recipeYield": recipe.get("recipeYield", ""),
+        "totalTime": recipe.get("totalTime") or None,
+        "prepTime": recipe.get("prepTime") or None,
+        "performTime": recipe.get("performTime") or None,
+        "recipeIngredient": ingredients,
+        "recipeInstructions": instructions,
+        "notes": recipe.get("notes", []),
+        "orgURL": recipe.get("orgURL") or None,
+    }
+
+
 def create_recipe(recipe: dict) -> tuple[str, str]:
     """Create a recipe in Mealie. Returns (slug, id)."""
     result = _post("/api/recipes", {"name": recipe["name"]})
     slug = result if isinstance(result, str) else result.get("slug", recipe["name"])
-    _put(f"/api/recipes/{slug}", recipe)
+    _put(f"/api/recipes/{slug}", _format_recipe(recipe))
     detail = _get(f"/api/recipes/{slug}")
     return slug, detail["id"]
 
