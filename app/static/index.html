@@ -123,12 +123,35 @@
     }
     .plan-day-date { font-size: 0.7rem; color: #475569; margin-bottom: 0.2rem; }
     .plan-day-name { font-size: 0.8rem; color: #cbd5e1; }
+    .plan-day-meal { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.2rem; }
+    .plan-day-meal.dinner { color: #818cf8; }
+    .plan-day-meal.lunch { color: #6b7280; }
+
+    details.prompt-section { margin-top: 1rem; }
+    details.prompt-section summary {
+      font-size: 0.8rem; color: #64748b; cursor: pointer; user-select: none;
+      list-style: none; display: flex; align-items: center; gap: 0.4rem;
+    }
+    details.prompt-section summary::-webkit-details-marker { display: none; }
+    details.prompt-section summary::before { content: '▶'; font-size: 0.6rem; transition: transform 0.15s; }
+    details[open].prompt-section summary::before { transform: rotate(90deg); }
+    details.prompt-section summary:hover { color: #94a3b8; }
+    details.prompt-section textarea {
+      width: 100%; margin-top: 0.75rem; padding: 0.6rem 0.75rem;
+      background: #12141e; border: 1px solid #2d3148; border-radius: 8px;
+      color: #e2e8f0; font-size: 0.8rem; font-family: inherit;
+      line-height: 1.5; resize: vertical; outline: none; min-height: 160px;
+    }
+    details.prompt-section textarea:focus { border-color: #4f46e5; }
+    details.prompt-section .prompt-hint {
+      font-size: 0.72rem; color: #475569; margin-top: 0.4rem;
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Ad Meal Planner</h1>
-    <p class="subtitle">Upload photos of your weekly grocery circular to build a meal plan in Mealie.</p>
+    <p class="subtitle">Upload photos of your weekly grocery circular to build a meal plan in Tandoor.</p>
 
     <div class="drop-zone" id="dropZone">
       <input type="file" id="fileInput" accept="image/*" multiple />
@@ -143,6 +166,12 @@
       style="width:100%;margin-top:1rem;padding:0.6rem 0.75rem;background:#12141e;border:1px solid #2d3148;
              border-radius:8px;color:#e2e8f0;font-size:0.9rem;outline:none;" />
 
+    <details class="prompt-section" id="promptSection">
+      <summary>Customize prompt</summary>
+      <textarea id="promptInput" spellcheck="false"></textarea>
+      <p class="prompt-hint">Use {count} where you want the recipe count inserted. Leave unchanged to use the default.</p>
+    </details>
+
     <button class="btn" id="submitBtn" disabled>Generate Meal Plan</button>
     <div class="status" id="status"></div>
 
@@ -155,7 +184,7 @@
       </div>
 
       <div class="section" id="newSection" style="display:none">
-        <div class="section-title">New Recipes Added to Mealie</div>
+        <div class="section-title">New Recipes Added to Tandoor</div>
         <ul class="recipe-list" id="newList"></ul>
       </div>
 
@@ -174,12 +203,23 @@
   </div>
 
   <script>
+    const DEFAULT_PROMPT = `You are a family dinner meal planner. Generate {count} hearty dinner recipes that use as many of these on-sale grocery items as possible.
+
+Rules:
+- Dinners only — no snacks, appetizers, side dishes, or desserts
+- Each recipe should serve 4+ and reheat well for next-day lunch leftovers
+- Prefer practical weeknight meals: 45 minutes or less total time when possible
+- Use the sale items as the star ingredients`;
+
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const previewGrid = document.getElementById('previewGrid');
     const submitBtn = document.getElementById('submitBtn');
     const status = document.getElementById('status');
+    const promptInput = document.getElementById('promptInput');
     let selectedFiles = [];
+
+    promptInput.value = DEFAULT_PROMPT;
 
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
@@ -219,6 +259,7 @@
         grid.innerHTML = data.meal_plan.map(e => `
           <div class="plan-day">
             <div class="plan-day-date">${new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'})}</div>
+            ${e.meal ? `<div class="plan-day-meal ${e.meal}">${e.meal}</div>` : ''}
             <div class="plan-day-name">${e.recipe}</div>
           </div>
         `).join('');
@@ -231,7 +272,7 @@
         list.innerHTML = data.new_recipes.map(r => `
           <li>
             <span>${r.name}</span>
-            ${r.url ? `<a href="${r.url}" target="_blank">View in Mealie →</a>` : ''}
+            ${r.url ? `<a href="${r.url}" target="_blank">View in Tandoor →</a>` : ''}
           </li>
         `).join('');
       }
@@ -272,6 +313,8 @@
       selectedFiles.forEach(f => form.append('images', f));
       const store = document.getElementById('storeInput').value.trim();
       if (store) form.append('store', store);
+      const prompt = promptInput.value.trim();
+      if (prompt && prompt !== DEFAULT_PROMPT) form.append('custom_instructions', prompt);
 
       try {
         const res = await fetch('/api/plan', { method: 'POST', body: form });

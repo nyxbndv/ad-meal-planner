@@ -6,30 +6,33 @@ from app.config import settings
 
 client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
+DEFAULT_INSTRUCTIONS = (
+    "You are a family dinner meal planner. Generate {count} hearty dinner recipes "
+    "that use as many of these on-sale grocery items as possible.\n\n"
+    "Rules:\n"
+    "- Dinners only — no snacks, appetizers, side dishes, or desserts\n"
+    "- Each recipe should serve 4+ and reheat well for next-day lunch leftovers\n"
+    "- Prefer practical weeknight meals: 45 minutes or less total time when possible\n"
+    "- Use the sale items as the star ingredients"
+)
+
 
 def generate_recipes(
     sale_items: list[dict],
     existing_recipe_names: list[str],
     count: int = 3,
     tags: list[str] = None,
+    custom_instructions: str = "",
 ) -> list[dict]:
-    """
-    Generate new recipes using sale items, avoiding duplicates with existing recipes.
-    Returns a list of Mealie-compatible recipe dicts.
-    """
+    """Generate new recipes using sale items, avoiding duplicates with existing recipes."""
     sale_summary = "\n".join(
         f"- {item['name']} ({item['price']}{', ' + item['unit'] if item['unit'] else ''})"
         for item in sale_items
     )
     existing = ", ".join(existing_recipe_names) if existing_recipe_names else "none"
+    instructions = (custom_instructions.strip() or DEFAULT_INSTRUCTIONS).format(count=count)
 
-    prompt = f"""You are a family dinner meal planner. Generate {count} hearty dinner recipes that use as many of these on-sale grocery items as possible.
-
-Rules:
-- Dinners only — no snacks, appetizers, side dishes, or desserts
-- Each recipe should serve 4+ and reheat well for next-day lunch leftovers
-- Prefer practical weeknight meals: 45 minutes or less total time when possible
-- Use the sale items as the star ingredients
+    prompt = f"""{instructions}
 
 On-sale items this week:
 {sale_summary}

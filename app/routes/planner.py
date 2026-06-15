@@ -28,7 +28,7 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 @router.post("/api/plan")
-async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Form("")):
+async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Form(""), custom_instructions: str = Form("")):
     if not images:
         raise HTTPException(status_code=400, detail="At least one image is required.")
 
@@ -66,7 +66,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
     if store:
         tags.append(store.lower().replace(" ", "-"))
     print(f"[3/6] Generating {new_count} new recipes...")
-    generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags)
+    generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags, custom_instructions=custom_instructions)
     print(f"[3/6] Generated: {[r.get('name') for r in generated]}")
 
     # 4. Create new recipes in Tandoor
