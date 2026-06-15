@@ -6,7 +6,7 @@ import httpx
 from app.config import settings
 
 BASE = settings.tandoor_url.rstrip("/")
-HEADERS = {"Authorization": f"Token {settings.tandoor_api_key}"}
+HEADERS = {"Authorization": f"Bearer {settings.tandoor_api_key}"}
 
 
 def _get(path: str, params: dict = None) -> dict:
