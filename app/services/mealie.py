@@ -95,6 +95,8 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     merged = list(dict.fromkeys(existing + tags))
     body = _format_recipe(detail)
     body["tags"] = [_tag(t) for t in merged]
+    body["id"] = detail["id"]
+    body["slug"] = detail["slug"]
     _put(f"/api/recipes/{slug}", body)
 
 
@@ -117,6 +119,8 @@ def create_recipe(recipe: dict) -> tuple[str, str]:
         slug = existing["slug"]
         body = _format_recipe(recipe)
         body["name"] = existing["name"]  # preserve stored name to avoid conflict on PUT
+        body["id"] = existing["id"]
+        body["slug"] = existing["slug"]
     else:
         result = _post("/api/recipes", {"name": recipe["name"]})
         slug = result if isinstance(result, str) else result.get("slug", expected_slug)
