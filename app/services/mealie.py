@@ -98,20 +98,31 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> None:
     _put(f"/api/recipes/{slug}", body)
 
 
+def _name_to_slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
 def create_recipe(recipe: dict) -> tuple[str, str]:
-    """Create or update a recipe in Mealie (upsert by name). Returns (slug, id)."""
-    # Find existing recipe with this name to avoid creating duplicate shells
-    all_recipes = fetch_all_recipes()
-    existing = next(
-        (r for r in all_recipes if r.get("name", "").lower() == recipe["name"].lower()),
-        None,
-    )
+    """Create or update a recipe in Mealie (upsert by slug). Returns (slug, id)."""
+    expected_slug = _name_to_slug(recipe["name"])
+
+    existing = None
+    try:
+        existing = _get(f"/api/recipes/{expected_slug}")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code != 404:
+            raise
+
     if existing:
         slug = existing["slug"]
+        body = _format_recipe(recipe)
+        body["name"] = existing["name"]  # preserve stored name to avoid conflict on PUT
     else:
         result = _post("/api/recipes", {"name": recipe["name"]})
-        slug = result if isinstance(result, str) else result.get("slug", recipe["name"])
-    _put(f"/api/recipes/{slug}", _format_recipe(recipe))
+        slug = result if isinstance(result, str) else result.get("slug", expected_slug)
+        body = _format_recipe(recipe)
+
+    _put(f"/api/recipes/{slug}", body)
     detail = _get(f"/api/recipes/{slug}")
     return slug, detail["id"]
 
