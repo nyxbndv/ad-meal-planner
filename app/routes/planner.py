@@ -7,13 +7,13 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.services.generator import generate_recipes
 from app.services.matcher import rank_existing_recipes
-from app.services.mealie import (
+from app.services.tandoor import (
     add_shopping_items,
     add_to_mealplan,
     add_tags_to_recipe,
     create_recipe,
     create_shopping_list,
-    debug_mealie,
+    debug_tandoor,
     delete_duplicate_recipes,
     fetch_all_recipes,
     fetch_recipe_detail,
@@ -39,20 +39,17 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {media_type}")
         image_data.append((await img.read(), media_type))
 
-    # 1. Clean up any duplicate recipe shells from previous failed runs
-    delete_duplicate_recipes()
-
-    # 2. Extract sale items from ad photos
+    # 1. Extract sale items from ad photos
     sale_items = extract_sale_items(image_data)
     if not sale_items:
         raise HTTPException(status_code=422, detail="No sale items could be extracted from images.")
 
-    # 3. Fetch and score existing Mealie recipes
-    mealie_summaries = fetch_all_recipes()
+    # 2. Fetch and score existing Tandoor recipes
+    summaries = fetch_all_recipes()
     detailed = []
-    for summary in mealie_summaries:
+    for summary in summaries:
         try:
-            detailed.append(fetch_recipe_detail(summary["slug"]))
+            detailed.append(fetch_recipe_detail(summary["id"]))
         except Exception:
             detailed.append(summary)
 
@@ -67,24 +64,24 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         tags.append(store.lower().replace(" ", "-"))
     generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags)
 
-    # 4. Create new recipes in Mealie
+    # 4. Create new recipes in Tandoor
     matched_tag = ["meal-planner"] + ([store.lower().replace(" ", "-")] if store else [])
     created = []
     for recipe in generated:
         try:
-            slug, recipe_id = create_recipe(recipe)
-            created.append({"name": recipe["name"], "slug": slug, "id": recipe_id})
+            recipe_id, _ = create_recipe(recipe)
+            created.append({"name": recipe["name"], "id": recipe_id})
         except Exception as e:
-            created.append({"name": recipe["name"], "slug": None, "id": None, "error": str(e)})
+            created.append({"name": recipe["name"], "id": None, "error": str(e)})
 
     matched_for_plan = []
     for recipe in matched:
         try:
-            new_slug, new_id = add_tags_to_recipe(recipe["slug"], matched_tag)
+            new_id, _ = add_tags_to_recipe(str(recipe["id"]), matched_tag)
             matched_for_plan.append({"name": recipe.get("name"), "id": new_id})
         except Exception as e:
             print(f"Tag error for {recipe.get('name')}: {e}")
-            matched_for_plan.append({"name": recipe.get("name"), "id": recipe.get("id")})
+            matched_for_plan.append({"name": recipe.get("name"), "id": str(recipe.get("id"))})
 
     # 5. Add all recipes to the meal plan across the week
     dates = week_dates(start=date.today(), count=target)
@@ -92,7 +89,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
 
     all_recipes_for_plan = (
         matched_for_plan
-        + [{"name": c["name"], "id": c.get("id"), "source": "new"} for c in created]
+        + [{"name": c["name"], "id": c.get("id")} for c in created]
     )
 
     for i, entry in enumerate(all_recipes_for_plan[:target]):
@@ -124,7 +121,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
     except Exception as e:
         print(f"Shopping list error: {e}")
 
-    mealie_base = settings.mealie_url.rstrip("/")
+    tandoor_base = settings.tandoor_url.rstrip("/")
 
     return JSONResponse({
         "sale_items_found": len(sale_items),
@@ -132,7 +129,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         "new_recipes": [
             {
                 "name": c["name"],
-                "url": f"{mealie_base}/recipe/{c['slug']}" if c.get("slug") else None,
+                "url": f"{tandoor_base}/recipe/{c['id']}/" if c.get("id") else None,
             }
             for c in created
         ],
@@ -140,29 +137,21 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
             {
                 "name": r.get("name"),
                 "matched_sales": r.get("_matched_sales", []),
-                "url": f"{mealie_base}/recipe/{r.get('slug')}",
+                "url": f"{tandoor_base}/recipe/{r.get('id')}/",
             }
             for r in matched
         ],
         "shopping_list": {
             "name": list_name,
             "items": len(deduped),
-            "url": f"{mealie_base}/shopping-lists/{shopping_list_id}" if shopping_list_id else None,
+            "url": f"{tandoor_base}/shopping-list/" if shopping_list_id else None,
         },
     })
 
 
 @router.get("/api/debug")
 def debug():
-    """Returns raw Mealie /api/recipes response to verify pagination key and auth."""
-    return debug_mealie()
-
-
-@router.post("/api/cleanup")
-def cleanup_duplicates():
-    """Delete duplicate recipes in Mealie (same name, different slug)."""
-    deleted = delete_duplicate_recipes()
-    return {"deleted": deleted, "count": len(deleted)}
+    return debug_tandoor()
 
 
 @router.get("/api/health")
