@@ -1,5 +1,5 @@
 import mimetypes
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
@@ -91,7 +91,7 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
             print(f"[4/6] Tag error for {recipe.get('name')}: {e}")
             matched_for_plan.append({"name": recipe.get("name"), "id": str(recipe.get("id"))})
 
-    # 5. Add all recipes to the meal plan across the week
+    # 5. Add all recipes to the meal plan — dinner each night, leftovers for lunch next day
     dates = week_dates(start=date.today(), count=target)
     plan_entries = []
 
@@ -100,17 +100,25 @@ async def create_meal_plan(images: list[UploadFile] = File(...), store: str = Fo
         + [{"name": c["name"], "id": c.get("id")} for c in created]
     )
 
-    print(f"[5/6] Adding {len(all_recipes_for_plan)} recipes to meal plan...")
+    print(f"[5/6] Adding {len(all_recipes_for_plan)} recipes to meal plan (dinner + next-day lunch)...")
     for i, entry in enumerate(all_recipes_for_plan[:target]):
         if not entry["id"]:
             print(f"[5/6] Skipping {entry['name']} — no id")
             continue
+        dinner_date = dates[i]
+        lunch_date = (date.fromisoformat(dinner_date) + timedelta(days=1)).isoformat()
         try:
-            add_to_mealplan(entry["id"], dates[i], recipe_name=entry["name"])
-            plan_entries.append({"date": dates[i], "recipe": entry["name"]})
-            print(f"[5/6] Meal plan: {dates[i]} → {entry['name']}")
+            add_to_mealplan(entry["id"], dinner_date, entry_type="dinner", recipe_name=entry["name"])
+            plan_entries.append({"date": dinner_date, "meal": "dinner", "recipe": entry["name"]})
+            print(f"[5/6] Dinner {dinner_date}: {entry['name']}")
         except Exception as e:
-            print(f"[5/6] Meal plan error for {entry['name']}: {e}")
+            print(f"[5/6] Dinner plan error for {entry['name']}: {e}")
+        try:
+            add_to_mealplan(entry["id"], lunch_date, entry_type="lunch", recipe_name=entry["name"])
+            plan_entries.append({"date": lunch_date, "meal": "lunch", "recipe": f"{entry['name']} (leftovers)"})
+            print(f"[5/6] Lunch  {lunch_date}: {entry['name']} (leftovers)")
+        except Exception as e:
+            print(f"[5/6] Lunch plan error for {entry['name']}: {e}")
 
     # 6. Build and push shopping list
     all_ingredients = []

@@ -23,7 +23,13 @@ def generate_recipes(
     )
     existing = ", ".join(existing_recipe_names) if existing_recipe_names else "none"
 
-    prompt = f"""You are a meal planning assistant. Generate {count} recipes that use as many of these on-sale grocery items as possible.
+    prompt = f"""You are a family dinner meal planner. Generate {count} hearty dinner recipes that use as many of these on-sale grocery items as possible.
+
+Rules:
+- Dinners only — no snacks, appetizers, side dishes, or desserts
+- Each recipe should serve 4+ and reheat well for next-day lunch leftovers
+- Prefer practical weeknight meals: 45 minutes or less total time when possible
+- Use the sale items as the star ingredients
 
 On-sale items this week:
 {sale_summary}
@@ -39,7 +45,7 @@ Return a JSON array of {count} recipes. Each recipe must have exactly these fiel
 - totalTime (string, ISO 8601 duration)
 - recipeIngredient (array of strings, e.g. ["1 lb chicken breast", "2 cloves garlic"])
 - recipeInstructions (array of objects with "text" field, e.g. [{{"text": "Preheat oven to 375F."}}])
-- tags (array of strings, e.g. ["weeknight", "budget-friendly"])
+- tags (array of strings, e.g. ["dinner", "weeknight"])
 - orgURL (empty string)
 - notes (array of objects with "title" and "text" fields — include one note listing which sale items were used)
 
