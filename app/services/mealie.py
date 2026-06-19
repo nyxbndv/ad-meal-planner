@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 
 import httpx
@@ -6,6 +7,11 @@ from app.config import settings
 
 BASE = settings.mealie_url.rstrip("/")
 HEADERS = {"Authorization": f"Bearer {settings.mealie_api_key}"}
+
+
+def _tag(name: str) -> dict:
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    return {"name": name, "slug": slug}
 
 
 def _get(path: str, params: dict = None) -> dict:
@@ -81,11 +87,10 @@ def add_tags_to_recipe(slug: str, tags: list[str]) -> tuple[str, str]:
     """Tag an existing recipe via PATCH (name omitted, so this avoids the
     PUT name-uniqueness bug entirely)."""
     detail = _get(f"/api/recipes/{slug}")
-    existing = {t["name"].lower() for t in detail.get("tags", [])}
-    merged_names = list(dict.fromkeys(
-        [t["name"] for t in detail.get("tags", [])] + [t for t in tags if t.lower() not in existing]
-    ))
-    _patch(f"/api/recipes/{slug}", {"tags": [{"name": n} for n in merged_names]})
+    existing_tags = list(detail.get("tags", []))
+    existing_names = {t["name"].lower() for t in existing_tags}
+    new_tags = [_tag(t) for t in tags if t.lower() not in existing_names]
+    _patch(f"/api/recipes/{slug}", {"tags": existing_tags + new_tags})
     return slug, detail["id"]
 
 
