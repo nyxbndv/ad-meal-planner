@@ -1,9 +1,17 @@
 services:
   ad-meal-planner:
-    image: nyxbndv/ad-meal-planner:latest
-    container_name: ad-meal-planner
+    image: nyxbndv/ad-meal-planner:mealie-url-import
+    container_name: ad-meal-planner-mealie
     restart: unless-stopped
     ports:
-      - "8765:8000"
+      - "8766:8000"
     env_file:
       - .env
+    volumes:
+      - ./data/recipes:/data/recipes
+    networks:
+      - proxynet
+
+networks:
+  proxynet:
+    external: true

@@ -1,4 +1,3 @@
-import re
 from datetime import date, timedelta
 
 import httpx
@@ -9,151 +8,84 @@ BASE = settings.mealie_url.rstrip("/")
 HEADERS = {"Authorization": f"Bearer {settings.mealie_api_key}"}
 
 
-def _tag(name: str) -> dict:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return {"name": name, "slug": slug}
-
-
 def _get(path: str, params: dict = None) -> dict:
     r = httpx.get(f"{BASE}{path}", headers=HEADERS, params=params, timeout=15)
     r.raise_for_status()
     return r.json()
 
 
-def _post(path: str, body) -> dict:
-    r = httpx.post(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
-    r.raise_for_status()
-    return r.json() if r.content else {}
-
-
-def _put(path: str, body: dict) -> dict:
-    r = httpx.put(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
+def _post(path: str, body: dict, timeout: float = 15) -> dict:
+    r = httpx.post(f"{BASE}{path}", headers=HEADERS, json=body, timeout=timeout)
     if not r.is_success:
-        print(f"PUT {path} {r.status_code}: {r.text[:500]}")
+        print(f"POST {path} {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
     return r.json() if r.content else {}
 
+
+def _delete(path: str) -> None:
+    r = httpx.delete(f"{BASE}{path}", headers=HEADERS, timeout=15)
+    r.raise_for_status()
+
+
+def _patch(path: str, body: dict) -> dict:
+    r = httpx.patch(f"{BASE}{path}", headers=HEADERS, json=body, timeout=15)
+    if not r.is_success:
+        print(f"PATCH {path} {r.status_code}: {r.text[:500]}")
+    r.raise_for_status()
+    return r.json() if r.content else {}
 
 
 # ── existing recipes ──────────────────────────────────────────────────────────
 
 def fetch_all_recipes() -> list[dict]:
     data = _get("/api/recipes", params={"page": 1, "perPage": -1})
-    # Handle both Mealie API shapes: newer uses "data", older uses "items"
     return data.get("data") or data.get("items") or []
 
 
-def debug_mealie() -> dict:
-    raw = _get("/api/recipes", params={"page": 1, "perPage": 5})
-    return {"top_level_keys": list(raw.keys()), "sample": raw}
+def _normalize(recipe: dict) -> dict:
+    """Flatten Mealie's ingredient objects to plain strings for the matcher/shopping list."""
+    recipe["recipeIngredient"] = [
+        ing.get("display") or ing.get("note") or ing.get("originalText", "")
+        for ing in recipe.get("recipeIngredient", [])
+    ]
+    return recipe
 
 
 def fetch_recipe_detail(slug: str) -> dict:
-    return _get(f"/api/recipes/{slug}")
+    return _normalize(_get(f"/api/recipes/{slug}"))
 
 
-def delete_duplicate_recipes() -> list[str]:
-    """Delete duplicate recipes (same name, different slug). Returns list of deleted slugs."""
-    all_recipes = fetch_all_recipes()
-    by_name: dict[str, list[dict]] = {}
-    for r in all_recipes:
-        name = r.get("name", "").lower().strip()
-        by_name.setdefault(name, []).append(r)
+# ── create recipes via URL import ─────────────────────────────────────────────
+# Uses Mealie's recipe-scrapers-based URL importer instead of the recipe CRUD
+# API, which has a broken name-uniqueness check on PUT in this Mealie version.
 
-    deleted = []
-    for name, dupes in by_name.items():
-        if len(dupes) <= 1:
-            continue
-        # Keep the one whose slug best matches the canonical slug (no numeric suffix)
-        canonical = _name_to_slug(dupes[0]["name"])
-        dupes.sort(key=lambda r: (r["slug"] != canonical, r["slug"]))
-        for r in dupes[1:]:
+def create_recipe_from_url(url: str) -> tuple[str, str]:
+    """Import a recipe by scraping `url` (our own generated HTML page with
+    schema.org/Recipe JSON-LD). Deletes any existing recipe with the same
+    name first so re-running a plan doesn't pile up duplicates."""
+    result = _post("/api/recipes/create/url", {"url": url, "includeTags": True}, timeout=30)
+    slug = result if isinstance(result, str) else result.get("slug")
+    detail = _get(f"/api/recipes/{slug}")
+
+    for r in fetch_all_recipes():
+        if r["slug"] != slug and r.get("name", "").lower().strip() == detail.get("name", "").lower().strip():
             try:
-                httpx.delete(f"{BASE}/api/recipes/{r['slug']}", headers=HEADERS, timeout=15).raise_for_status()
-                deleted.append(r["slug"])
-                print(f"Deleted duplicate: {r['slug']} ({r.get('name')})")
+                _delete(f"/api/recipes/{r['slug']}")
             except Exception as e:
-                print(f"Failed to delete {r['slug']}: {e}")
-    return deleted
+                print(f"Failed to delete duplicate {r['slug']}: {e}")
 
-
-# ── create recipes ────────────────────────────────────────────────────────────
-
-def _format_recipe(recipe: dict) -> dict:
-    """Convert generated recipe dict to Mealie's PUT schema."""
-    ingredients = []
-    for ing in recipe.get("recipeIngredient", []):
-        if isinstance(ing, str):
-            ingredients.append({"note": ing, "display": ing, "quantity": 0,
-                                 "unit": None, "food": None, "title": None, "originalText": ing})
-        elif isinstance(ing, dict):
-            ingredients.append(ing)
-
-    instructions = []
-    for step in recipe.get("recipeInstructions", []):
-        if isinstance(step, str):
-            instructions.append({"text": step, "title": "", "summary": "", "ingredientReferences": []})
-        elif isinstance(step, dict):
-            instructions.append({"text": step.get("text", ""), "title": step.get("title", ""),
-                                  "summary": step.get("summary", ""), "ingredientReferences": []})
-
-    return {
-        "name": recipe.get("name", ""),
-        "description": recipe.get("description", ""),
-        "recipeYield": recipe.get("recipeYield", ""),
-        "totalTime": recipe.get("totalTime") or None,
-        "prepTime": recipe.get("prepTime") or None,
-        "performTime": recipe.get("performTime") or None,
-        "recipeIngredient": ingredients,
-        "recipeInstructions": instructions,
-        "notes": recipe.get("notes", []),
-        "orgURL": recipe.get("orgURL") or None,
-        "tags": [_tag(t) if isinstance(t, str) else t for t in recipe.get("tags", [])],
-    }
+    return slug, detail["id"]
 
 
 def add_tags_to_recipe(slug: str, tags: list[str]) -> tuple[str, str]:
-    """Add tags to a recipe. Returns (new_slug, new_id) — IDs change due to DELETE+POST."""
+    """Tag an existing recipe via PATCH (name omitted, so this avoids the
+    PUT name-uniqueness bug entirely)."""
     detail = _get(f"/api/recipes/{slug}")
-    existing_tags = [t["name"] for t in detail.get("tags", [])]
-    merged = list(dict.fromkeys(existing_tags + tags))
-
-    # DELETE → POST → PUT because this Mealie version rejects PUT on existing names
-    httpx.delete(f"{BASE}/api/recipes/{slug}", headers=HEADERS, timeout=15).raise_for_status()
-    result = _post("/api/recipes", {"name": detail["name"]})
-    new_slug = result if isinstance(result, str) else result.get("slug", slug)
-    shell = _get(f"/api/recipes/{new_slug}")
-    body = {**detail, **shell}
-    body["id"] = shell["id"]
-    body["slug"] = shell["slug"]
-    body["name"] = shell["name"]
-    body["tags"] = [_tag(t) for t in merged]
-    _put(f"/api/recipes/{new_slug}", body)
-    return new_slug, shell["id"]
-
-
-def _name_to_slug(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-
-
-def create_recipe(recipe: dict) -> tuple[str, str]:
-    """Create recipe in Mealie. Deletes any existing recipe with this name first,
-    because this Mealie version returns 400 on PUT if the name already exists."""
-    name_lower = recipe["name"].lower().strip()
-    for r in fetch_all_recipes():
-        if r.get("name", "").lower().strip() == name_lower:
-            try:
-                httpx.delete(f"{BASE}/api/recipes/{r['slug']}", headers=HEADERS, timeout=15).raise_for_status()
-            except Exception as e:
-                print(f"Failed to delete existing recipe {r['slug']}: {e}")
-
-    result = _post("/api/recipes", {"name": recipe["name"]})
-    slug = result if isinstance(result, str) else result.get("slug", _name_to_slug(recipe["name"]))
-    shell = _get(f"/api/recipes/{slug}")
-    body = {**shell, **_format_recipe(recipe)}
-    body["name"] = shell["name"]
-    _put(f"/api/recipes/{slug}", body)
-    detail = _get(f"/api/recipes/{slug}")
+    existing = {t["name"].lower() for t in detail.get("tags", [])}
+    merged_names = list(dict.fromkeys(
+        [t["name"] for t in detail.get("tags", [])] + [t for t in tags if t.lower() not in existing]
+    ))
+    _patch(f"/api/recipes/{slug}", {"tags": [{"name": n} for n in merged_names]})
     return slug, detail["id"]
 
 
@@ -169,7 +101,6 @@ def add_to_mealplan(recipe_id: str, plan_date: str, entry_type: str = "dinner") 
 
 
 def week_dates(start: date = None, count: int = 7) -> list[str]:
-    """Return ISO date strings for the next `count` days starting from start (default: today)."""
     start = start or date.today()
     return [(start + timedelta(days=i)).isoformat() for i in range(count)]
 
@@ -177,7 +108,6 @@ def week_dates(start: date = None, count: int = 7) -> list[str]:
 # ── shopping list ─────────────────────────────────────────────────────────────
 
 def create_shopping_list(name: str) -> str:
-    """Create a shopping list and return its id."""
     result = _post("/api/households/shopping/lists", {"name": name})
     return result["id"]
 
@@ -190,3 +120,8 @@ def add_shopping_items(list_id: str, items: list[str]) -> None:
             })
         except Exception as e:
             print(f"Shopping item error ({item!r}): {e}")
+
+
+def debug_mealie() -> dict:
+    raw = _get("/api/recipes", params={"page": 1, "perPage": 5})
+    return {"top_level_keys": list(raw.keys()), "sample": raw}
