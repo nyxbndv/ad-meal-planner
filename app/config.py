@@ -3,8 +3,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     anthropic_api_key: str
-    tandoor_url: str
-    tandoor_api_key: str
+    tandoor_url: str = ""
+    tandoor_api_key: str = ""
     recipes_per_week: int = 7
 
     mealie_url: str = ""
