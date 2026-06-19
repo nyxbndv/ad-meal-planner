@@ -184,7 +184,7 @@
       </div>
 
       <div class="section" id="newSection" style="display:none">
-        <div class="section-title">New Recipes Added to Mealie</div>
+        <div class="section-title">New Recipes (import manually in Mealie)</div>
         <ul class="recipe-list" id="newList"></ul>
       </div>
 
@@ -272,7 +272,7 @@ Rules:
         list.innerHTML = data.new_recipes.map(r => `
           <li>
             <span>${r.name}</span>
-            ${r.url ? `<a href="${r.url}" target="_blank">View in Mealie →</a>` : ''}
+            ${r.url ? `<a href="${r.url}" target="_blank">Copy URL to import →</a>` : ''}
           </li>
         `).join('');
       }

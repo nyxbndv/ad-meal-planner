@@ -24,7 +24,6 @@ from app.services.mealie import (
     add_shopping_items as mealie_add_shopping_items,
     add_tags_to_recipe as mealie_add_tags_to_recipe,
     add_to_mealplan as mealie_add_to_mealplan,
-    create_recipe_from_url,
     create_shopping_list as mealie_create_shopping_list,
     debug_mealie,
     fetch_all_recipes as mealie_fetch_all_recipes,
@@ -223,17 +222,18 @@ async def create_meal_plan_mealie(images: list[UploadFile] = File(...), store: s
     generated = generate_recipes(sale_items, existing_names, count=new_count, tags=tags, custom_instructions=custom_instructions)
     print(f"[3/6] Generated: {[r.get('name') for r in generated]}")
 
-    matched_tag = ["meal-planner"] + ([store.lower().replace(" ", "-")] if store else [])
+    # New recipes aren't pushed to Mealie automatically — Mealie's URL importer
+    # blocks fetching internal/private-IP hosts (InvalidDomainError), so we just
+    # render the page and hand back the URL for manual "Import from URL" in Mealie.
     created = []
     for recipe in generated:
         try:
             _, page_url = write_recipe_page(recipe)
-            slug, recipe_id = create_recipe_from_url(page_url)
-            created.append({"name": recipe["name"], "id": recipe_id, "slug": slug})
-            print(f"[4/6] Imported recipe via URL: {recipe['name']} (slug={slug})")
+            created.append({"name": recipe["name"], "url": page_url})
+            print(f"[4/6] Rendered recipe page: {recipe['name']} ({page_url})")
         except Exception as e:
-            created.append({"name": recipe["name"], "id": None, "error": str(e)})
-            print(f"[4/6] Failed to import recipe {recipe['name']}: {e}")
+            created.append({"name": recipe["name"], "url": None, "error": str(e)})
+            print(f"[4/6] Failed to render recipe page for {recipe['name']}: {e}")
 
     matched_for_plan = []
     for recipe in matched:
@@ -248,13 +248,10 @@ async def create_meal_plan_mealie(images: list[UploadFile] = File(...), store: s
     dates = mealie_week_dates(start=date.today(), count=target)
     plan_entries = []
 
-    all_recipes_for_plan = (
-        matched_for_plan
-        + [{"name": c["name"], "id": c.get("id"), "slug": c.get("slug")} for c in created]
-    )
-
-    print(f"[5/6] Adding {len(all_recipes_for_plan)} recipes to meal plan (dinner + next-day lunch)...")
-    for i, entry in enumerate(all_recipes_for_plan[:target]):
+    # Only matched (already-in-Mealie) recipes get auto-scheduled — new recipes
+    # have no Mealie id until manually imported from their rendered page.
+    print(f"[5/6] Adding {len(matched_for_plan)} recipes to meal plan (dinner + next-day lunch)...")
+    for i, entry in enumerate(matched_for_plan[:target]):
         if not entry["id"]:
             print(f"[5/6] Skipping {entry['name']} — no id")
             continue
@@ -301,7 +298,7 @@ async def create_meal_plan_mealie(images: list[UploadFile] = File(...), store: s
         "new_recipes": [
             {
                 "name": c["name"],
-                "url": f"{mealie_base}/recipe/{c['slug']}/" if c.get("slug") else None,
+                "url": c.get("url"),
             }
             for c in created
         ],
