@@ -151,7 +151,7 @@
 <body>
   <div class="card">
     <h1>Ad Meal Planner</h1>
-    <p class="subtitle">Upload photos of your weekly grocery circular to build a meal plan in Tandoor.</p>
+    <p class="subtitle">Upload photos of your weekly grocery circular to build a meal plan in Mealie.</p>
 
     <div class="drop-zone" id="dropZone">
       <input type="file" id="fileInput" accept="image/*" multiple />
@@ -184,7 +184,7 @@
       </div>
 
       <div class="section" id="newSection" style="display:none">
-        <div class="section-title">New Recipes Added to Tandoor</div>
+        <div class="section-title">New Recipes Added to Mealie</div>
         <ul class="recipe-list" id="newList"></ul>
       </div>
 
@@ -272,7 +272,7 @@ Rules:
         list.innerHTML = data.new_recipes.map(r => `
           <li>
             <span>${r.name}</span>
-            ${r.url ? `<a href="${r.url}" target="_blank">View in Tandoor →</a>` : ''}
+            ${r.url ? `<a href="${r.url}" target="_blank">View in Mealie →</a>` : ''}
           </li>
         `).join('');
       }
@@ -317,7 +317,7 @@ Rules:
       if (prompt && prompt !== DEFAULT_PROMPT) form.append('custom_instructions', prompt);
 
       try {
-        const res = await fetch('/api/plan', { method: 'POST', body: form });
+        const res = await fetch('/api/plan-mealie', { method: 'POST', body: form });
         if (!res.ok) {
           let msg = `Server error (${res.status})`;
           try { const err = await res.json(); msg = err.detail || msg; } catch {}
